@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CyberHX Mail Dashboard</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#14181f;--mut:#6b7280;--bd:#e3e6eb;--ac:#2563eb;--ok:#16a34a;--bad:#dc2626}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#171b22;--tx:#e8ebf0;--mut:#8b94a3;--bd:#262c36;--ac:#60a5fa;--ok:#4ade80;--bad:#f87171}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 system-ui,sans-serif;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.w{max-width:1100px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 12px}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.c{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px}
+label{display:block;font-size:12px;color:var(--mut);margin:10px 0 3px}
+input,select,textarea,button{width:100%;font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px 10px}
+textarea{min-height:90px;resize:vertical}
+input[type=color]{padding:2px;height:36px}
+input[type=checkbox]{width:auto}
+.r{display:flex;gap:8px}.r>*{flex:1}
+button{cursor:pointer;width:auto}
+button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+button:disabled{opacity:.5;cursor:not-allowed}
+iframe{width:100%;height:520px;border:1px solid var(--bd);border-radius:8px;background:#f3f4f6}
+#log{max-height:200px;overflow:auto;font-size:12px;font-family:ui-monospace,monospace;white-space:pre-wrap;margin-top:8px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.m{color:var(--mut);font-size:12px}
+#login{max-width:340px;margin:12vh auto}
+</style>
+</head>
+<body>
+<div class="w">
+<div id="login" class="c"><h1>Admin login</h1><label>Password</label><input type="password" id="pw"><p id="lerr" class="bad m"></p><button class="p" id="lb">Login</button></div>
+
+<div id="app" hidden>
+<h1>Send Mail</h1>
+<div class="grid">
+  <div class="c">
+    <div class="r"><div><label>Provider</label><select id="prov"><option value="resend">Resend (100/day)</option><option value="brevo">Brevo (300/day)</option></select></div>
+    <div><label>Template style</label><select id="style"><option value="announcement">Blue - Announcement</option><option value="success">Green - Success</option><option value="alert">Red - Alert</option><option value="dark">Dark</option></select></div>
+    <div style="max-width:70px"><label>Color</label><input type="color" id="color" value="#2563eb"></div></div>
+    <label>Subject</label><input id="subject" value="Important announcement">
+    <label>Heading</label><input id="title" value="Big news from CyberHX">
+    <label>Message</label><textarea id="body">Hello,&#10;&#10;We have an important update for you. Tap the button below to read more.</textarea>
+    <div class="r"><div><label>Button text</label><input id="btnText" value="Read more"></div><div><label>Button link</label><input id="btnUrl" value="https://cyberhx.com"></div></div>
+    <label>Banner image URL (optional, https)</label><input id="imageUrl" placeholder="https://...">
+    <label>Attach image/file (max 1 MB)</label><input type="file" id="file">
+    <label><input type="checkbox" id="inline"> Show attached image inside the email body (Resend only)</label>
+    <label>Recipients (one per line or comma separated)</label><textarea id="to" placeholder="a@example.com&#10;b@example.com"></textarea>
+    <div class="r"><input id="test" placeholder="Your test email"><button id="tb">Send test</button></div>
+    <p class="m" id="info"></p>
+    <button class="p" id="sb">Send</button>
+    <div id="log"></div>
+  </div>
+  <div class="c"><label style="margin-top:0">Live preview</label><iframe id="pv" sandbox></iframe></div>
+</div>
+</div>
+</div>
+<script src="tpl.js"></script>
+<script>
+var LIM={resend:100,brevo:300},$=function(i){return document.getElementById(i)},pw='',att=null,dataUrl='';
+try{pw=sessionStorage.getItem('pw')||''}catch(e){}
+function api(body){return fetch('/api/send',{method:'POST',headers:{'Content-Type':'application/json','x-admin-password':pw},body:JSON.stringify(body)}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||r.status);return j})})}
+function login(){pw=$('pw').value||pw;api({ping:1}).then(function(){try{sessionStorage.setItem('pw',pw)}catch(e){}$('login').hidden=true;$('app').hidden=false;init()}).catch(function(e){$('lerr').textContent=e.message})}
+$('lb').onclick=login;$('pw').onkeydown=function(e){if(e.key=='Enter')login()};
+if(pw)login();
+function day(){return new Date().toISOString().slice(0,10)}
+function used(p){try{return +localStorage.getItem('c:'+day()+':'+p)||0}catch(e){return 0}}
+function addUsed(p,n){try{localStorage.setItem('c:'+day()+':'+p,used(p)+n)}catch(e){}}
+function tplObj(){return{style:$('style').value,color:$('color').value,title:$('title').value,body:$('body').value,btnText:$('btnText').value,btnUrl:$('btnUrl').value,imageUrl:$('imageUrl').value}}
+function emails(){var s={};return $('to').value.split(/[\s,;]+/).filter(function(x){return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(x)&&!s[x.toLowerCase()]&&(s[x.toLowerCase()]=1)})}
+function refresh(){
+  var o=tplObj();if(att&&$('inline').checked&&dataUrl)o.imageUrl=dataUrl;
+  $('pv').srcdoc=window.buildTpl(o);
+  var p=$('prov').value,left=Math.max(0,LIM[p]-used(p)),n=emails().length;
+  $('info').textContent=n+' valid emails. Today '+p+': '+used(p)+'/'+LIM[p]+' used, '+left+' left'+(n>left?' ('+(n-left)+' will stay pending for tomorrow)':'');
+  $('sb').textContent='Send to '+Math.min(n,left);
+}
+function init(){
+  $('style').onchange=function(){$('color').value=window.TPL_COLORS[$('style').value];refresh()};
+  ['prov','color','subject','title','body','btnText','btnUrl','imageUrl','to','inline'].forEach(function(i){$(i).oninput=refresh;$(i).onchange=refresh});
+  $('file').onchange=function(e){var f=e.target.files[0];att=null;dataUrl='';if(!f){refresh();return}
+    if(f.size>1048576){alert('File is larger than 1 MB');e.target.value='';refresh();return}
+    var rd=new FileReader();rd.onload=function(){dataUrl=rd.result;att={name:f.name,data:String(rd.result).split(',')[1]};refresh()};rd.readAsDataURL(f)};
+  $('tb').onclick=function(){var t=$('test').value.trim();if(!t)return;run([t],true)};
+  $('sb').onclick=function(){var p=$('prov').value,left=Math.max(0,LIM[p]-used(p)),l=emails();run(l.slice(0,left),false,l.slice(left))};
+  refresh();
+}
+function log(t,c){var d=document.createElement('div');d.className=c||'';d.textContent=t;$('log').appendChild(d);$('log').scrollTop=1e9}
+async function run(list,isTest,pending){
+  if(!list.length){log('No recipients to send','bad');return}
+  var p=$('prov').value;$('sb').disabled=$('tb').disabled=true;var fail=[],okN=0;
+  for(var i=0;i<list.length;i+=25){
+    try{
+      var r=await api({provider:p,to:list.slice(i,i+25),subject:$('subject').value,tpl:tplObj(),attachment:att,inline:$('inline').checked});
+      r.results.forEach(function(x){if(x.ok)okN++;else{fail.push(x.to);log('FAIL '+x.to+' - '+x.error,'bad')}});
+    }catch(e){log('Error: '+e.message,'bad');fail=fail.concat(list.slice(i));break}
+    log('Progress '+Math.min(i+25,list.length)+'/'+list.length);
+  }
+  if(!isTest){addUsed(p,okN);$('to').value=fail.concat(pending||[]).join('\n')}
+  log('Done. Sent '+okN+', failed '+fail.length+(isTest?' (test)':''),okN?'ok':'bad');
+  $('sb').disabled=$('tb').disabled=false;refresh();
+}
+</script>
+</body>
+</html>
